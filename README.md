@@ -1,4 +1,4 @@
-# HTTP Monitor
+# HTTP Response Monitor
 
 **Live demo:** [https://frontend-staging-0e36.up.railway.app/](https://frontend-staging-0e36.up.railway.app/)
 
