@@ -85,8 +85,8 @@ jobs:
         run: npm ci
 
       - name: Run component tests with coverage
-        if: always()
         run: npm run test:coverage
+
       - name: Upload frontend coverage
         if: always()
         uses: actions/upload-artifact@v4
