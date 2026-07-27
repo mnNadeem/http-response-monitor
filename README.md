@@ -112,3 +112,22 @@ Use:
 Set backend runtime env: `DATABASE_URL`, `CORS_ORIGIN`, `PORT` (if needed).  
 Provide frontend build args: `VITE_API_BASE`, `VITE_WS_URL`.
 
+## Assumptions
+
+Shortcuts / trade-offs taken for time:
+
+- Failed pings are stored as data, not dropped
+- Stats (avg latency) are computed over successful requests only
+- No authentication — treated as an internal / single-tenant tool
+- Manual trigger endpoint (`POST /api/monitor/run`) exists so demos can show the real-time flow without waiting for the cron
+- The scheduler runs inside the API process (`node-cron`), not as a separate worker
+- Migrations use a minimal custom runner instead of a full migration framework
+- Frontend component tests cover a small surface; hook-level coverage is still light
+
+## Future improvements
+
+- Frontend tests (Vitest + Testing Library for `useMonitorData`)
+- Separate scheduler worker so API restarts don't interrupt the cron
+- Rate limiting and auth for public deployments
+- Proper migration tool (Knex / node-pg-migrate) instead of the minimal custom runner
+
