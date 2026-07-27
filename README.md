@@ -1,81 +1,83 @@
 # HTTP Response Monitor
 
-**Live demo:** [https://frontend-staging-0e36.up.railway.app/](https://frontend-staging-0e36.up.railway.app/)
+**Repository:** [https://github.com/mnNadeem/http-response-monitor](https://github.com/mnNadeem/http-response-monitor) *(public)*  
+**Live demo:** [https://frontend-staging-0e36.up.railway.app/](https://frontend-staging-0e36.up.railway.app/)  
+**Author:** Muhammad Nadeem (`mnNadeem`)
 
 Pings `httpbin.org/anything` every 5 minutes, stores results in PostgreSQL, and streams live updates to a React dashboard.
 
-## Quick start
+---
+
+## How to run locally
 
 ### Docker (recommended)
 
-1. `docker compose up --build`
-2. Open `http://localhost:5173`
-
-This starts Postgres + backend + frontend together. (Postgres is published on host port `5433`.)
-
-### Manual (optional)
-
-Requirements: Node.js `>= 20`, PostgreSQL running locally.
-
-**Backend** (http://localhost:4000)
+**Prerequisites:** Docker Desktop (or another Docker daemon) running.
 
 ```bash
+docker compose up --build
+```
+
+Open http://localhost:5173  
+Postgres is published on host port **5433**.
+
+### Manual setup
+
+**Prerequisites:** Node.js `>= 20`, PostgreSQL running locally.
+
+```bash
+# Database
+createdb http_monitor_development
+
+# Backend → http://localhost:4000
 cd backend
 cp .env.example .env
 npm install
 npm run migrate
 npm run dev
-```
 
-**Frontend** (http://localhost:5173)
-
-```bash
+# Frontend → http://localhost:5173
 cd frontend
 cp .env.example .env
 npm install
 npm run dev
 ```
 
-## Configuration
+If port `5432` is already in use, set `DATABASE_URL` in `backend/.env` to another port (e.g. `postgresql://localhost:5433/http_monitor_development`).
 
-### Backend runtime env
+### Useful endpoints (local)
 
-- `DATABASE_URL` (required)
-- `CORS_ORIGIN` (use `*` for dev)
-- `MONITOR_TARGET_URL` (default: `https://httpbin.org/anything`)
-- `MONITOR_CRON` (default: `*/5 * * * *`)
-- `MONITOR_RUN_ON_BOOT=true` (optional: triggers one run on startup)
-- `MONITOR_REQUEST_TIMEOUT_MS` (default: `10000`)
-- `PORT` (default: `4000`)
+| What | URL |
+|---|---|
+| Dashboard | http://localhost:5173 |
+| Health | http://localhost:4000/api/health |
+| Swagger | http://localhost:4000/api/docs |
+| WebSocket | `ws://localhost:4000/ws` |
 
-### Frontend build-time env
+---
 
-- `VITE_API_BASE` (default: `http://localhost:4000`)
-- `VITE_WS_URL` (default: `ws://localhost:4000/ws`)
+## Core components (and why)
 
-## API
+Focus was on the pieces that define correctness for this system: **ping → persist → stream → display**, plus anomaly detection as the main analysis surface.
 
-### REST
+| Component | Location | Why it is core |
+|---|---|---|
+| **MonitorService** | `backend/src/modules/monitor/monitor-service.js` | Owns the full monitor cycle: build payload, call target, persist result, broadcast. Failures are stored, not discarded. |
+| **MonitorScheduler** | `backend/src/modules/monitor/monitor-scheduler.js` | Runs the cycle on cron (and optionally on boot). Overlap-safe so concurrent ticks don’t pile up. |
+| **Repository** | `backend/src/modules/monitor/monitor-repository.js` | All SQL in one place. Parameterized queries + whitelisted sort columns. |
+| **Broadcaster** | `backend/src/modules/monitor/broadcaster.js` | Lightweight WebSocket fan-out with heartbeat. Isolated so socket errors can’t break the monitor cycle. |
+| **Anomaly detector / AnalysisService** | `backend/src/modules/monitor/anomaly/`, `analysis-service.js` | Rolling z-score + EWMA forecast for latency spikes. Pure analysis functions, easy to unit-test. |
+| **useMonitorData** | `frontend/src/hooks/useMonitorData.ts` | Fuses REST snapshot + live WS pushes into one cache. Keeps UI components presentational. |
 
-- `GET /api/health`
-- `GET /api/results` (supports `limit`, `offset`, `success`, `sortBy`, `order`)
-- `GET /api/results/:id`
-- `GET /api/stats`
-- `GET /api/analysis`
-- `POST /api/monitor/run` (manual trigger)
+Backend layout is feature-based under `backend/src/modules/monitor/` (kebab-case), with shared cross-cutting code in `backend/src/shared/`.
 
-### WebSocket
+---
 
-- `ws://localhost:4000/ws` (pushes `monitor_result` frames)
+## Testing priorities (and why)
 
-### Swagger
+Testing effort was concentrated on the highest-risk paths first.
 
-- `http://localhost:4000/api/docs`
-- OpenAPI JSON: `http://localhost:4000/api/docs.json`
-
-## Testing
-
-Backend:
+### Backend (highest priority)
 
 ```bash
 cd backend
@@ -84,49 +86,86 @@ npm run test:coverage
 npm run lint
 ```
 
-Frontend:
+| Priority | What | Why |
+|---|---|---|
+| **1. Unit — MonitorService** | success, 4xx/5xx, timeout, network error, broadcast contract | This is the business-critical path; regressions here break the product. |
+| **1. Unit — anomaly detector** | spikes, drops, warm-up suppression, band ordering | Statistical logic is easy to get subtly wrong and hard to catch in UI. |
+| **2. Integration — REST routes** | health, results, stats, analysis, manual run | Confirms HTTP contracts + DB wiring with a real Postgres test DB. |
+| **3. E2E — realtime flow** | trigger run → WS broadcast → REST queryable | Proves the end-to-end promise: persist + live stream. |
+
+Also covered with unit tests: scheduler overlap/boot behaviour, payload generator, analysis service wrappers.
+
+### Frontend (supporting)
 
 ```bash
 cd frontend
 npm test
 ```
 
-## Deployment
+Component tests cover empty/loading states (`ResultsTable`, `LoadingResults`). Hook-level tests for `useMonitorData` are listed under future improvements — the fusion logic is important, but backend correctness was the tighter risk for this assignment.
 
-### Railway
+**CI (GitHub Actions):** on every push/PR → backend lint + migrate + test with coverage, and frontend component tests with coverage.
 
-Deploy backend + frontend as separate services and set:
+---
+
+## Configuration
+
+### Backend runtime env
+
+- `DATABASE_URL` (required)
+- `CORS_ORIGIN` (use `*` for dev; set to frontend origin in production)
+- `MONITOR_TARGET_URL` (default: `https://httpbin.org/anything`)
+- `MONITOR_CRON` (default: `*/5 * * * *`)
+- `MONITOR_RUN_ON_BOOT=true` (optional: one run on startup)
+- `MONITOR_REQUEST_TIMEOUT_MS` (default: `10000`)
+- `PORT` (default: `4000`)
+
+### Frontend build-time env
+
+- `VITE_API_BASE` (default: `http://localhost:4000`)
+- `VITE_WS_URL` (default: `ws://localhost:4000/ws`)
+
+---
+
+## API overview
+
+- `GET /api/health`
+- `GET /api/results` (`limit`, `offset`, `success`, `sortBy`, `order`)
+- `GET /api/results/:id`
+- `GET /api/stats`
+- `GET /api/analysis`
+- `POST /api/monitor/run` (manual trigger)
+- WebSocket: `/ws` (pushes `monitor_result` frames)
+- Swagger: `/api/docs`
+
+---
+
+## Deployment (Railway)
+
+Deploy **Postgres**, **backend**, and **frontend** as separate services:
 
 - Backend env: `DATABASE_URL`, `CORS_ORIGIN`, `MONITOR_RUN_ON_BOOT=true`
-- Frontend build env: `VITE_API_BASE`, `VITE_WS_URL`
+- Frontend build env: `VITE_API_BASE` (`https://…`), `VITE_WS_URL` (`wss://…/ws`)
 
-Note: the monitor schedule runs inside the backend process (`node-cron`). If the service sleeps/scales down, cron ticks pause until it’s up again. For demos, use the dashboard **Run now** button.
+Note: the schedule runs inside the backend process. If the service sleeps/scales to zero, cron pauses until it is up again. For demos, use the dashboard **Run now** button.
 
-### Other Docker-based hosts (Render/Fly/Heroku/etc.)
+---
 
-Use:
-
-- `backend/Dockerfile` for the backend
-- `frontend/Dockerfile` for the frontend
-
-Set backend runtime env: `DATABASE_URL`, `CORS_ORIGIN`, `PORT` (if needed).  
-Provide frontend build args: `VITE_API_BASE`, `VITE_WS_URL`.
-
-## Assumptions
-
-Shortcuts / trade-offs taken for time:
+## Assumptions / shortcuts (time constraints)
 
 - Failed pings are stored as data, not dropped
 - Stats (avg latency) are computed over successful requests only
 - No authentication — treated as an internal / single-tenant tool
-- Manual trigger endpoint (`POST /api/monitor/run`) exists so demos can show the real-time flow without waiting for the cron
-- The scheduler runs inside the API process (`node-cron`), not as a separate worker
-- Migrations use a minimal custom runner instead of a full migration framework
-- Frontend component tests cover a small surface; hook-level coverage is still light
+- Manual trigger (`POST /api/monitor/run`) added so demos don’t have to wait 5 minutes
+- Scheduler runs in-process (`node-cron`), not as a separate worker
+- Migrations use a minimal custom runner (not Knex / node-pg-migrate)
+- Frontend tests currently cover component empty/loading states more than hook fusion logic
+
+---
 
 ## Future improvements
 
-- Separate scheduler worker so API restarts don't interrupt the cron
+- Frontend tests (Vitest + Testing Library for `useMonitorData`)
+- Separate scheduler worker so API restarts don’t interrupt the cron
 - Rate limiting and auth for public deployments
 - Proper migration tool (Knex / node-pg-migrate) instead of the minimal custom runner
-
