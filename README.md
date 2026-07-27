@@ -6,7 +6,7 @@ Pings `httpbin.org/anything` every 5 minutes, stores results in PostgreSQL, and 
 
 ---
 
-## How to run locally
+## Setup instructions
 
 ### Docker (recommended)
 
@@ -17,7 +17,7 @@ docker compose up --build
 ```
 
 Open http://localhost:5173  
-Postgres is published on host port **5433**.
+This starts Postgres + backend + frontend together. Postgres is published on host port **5433**.
 
 ### Manual setup
 
@@ -52,11 +52,81 @@ If port `5432` is already in use, set `DATABASE_URL` in `backend/.env` to anothe
 | Swagger | http://localhost:4000/api/docs |
 | WebSocket | `ws://localhost:4000/ws` |
 
+### Configuration
+
+**Backend runtime env**
+
+- `DATABASE_URL` (required)
+- `CORS_ORIGIN` (use `*` for dev; set to frontend origin in production)
+- `MONITOR_TARGET_URL` (default: `https://httpbin.org/anything`)
+- `MONITOR_CRON` (default: `*/5 * * * *`)
+- `MONITOR_RUN_ON_BOOT=true` (optional: one run on startup)
+- `MONITOR_REQUEST_TIMEOUT_MS` (default: `10000`)
+- `PORT` (default: `4000`)
+
+**Frontend build-time env**
+
+- `VITE_API_BASE` (default: `http://localhost:4000`)
+- `VITE_WS_URL` (default: `ws://localhost:4000/ws`)
+
 ---
 
-## Core components (and why)
+## Architecture overview
 
-Focus was on the pieces that define correctness for this system: **ping → persist → stream → display**, plus anomaly detection as the main analysis surface.
+Backend is feature-based under `backend/src/modules/monitor/` (kebab-case files), with shared cross-cutting code in `backend/src/shared/`.
+
+**Every 5 minutes (or on manual trigger):**
+
+1. `MonitorScheduler` triggers `MonitorService`
+2. `MonitorService` builds a random payload, POSTs to httpbin, persists the result in PostgreSQL via `MonitorRepository`, and pushes the saved record over WebSocket via `Broadcaster`
+3. Optionally runs anomaly analysis (`AnalysisService` / anomaly detector) and enriches the broadcast
+4. React dashboard receives the live push instantly via WebSocket
+
+**On page load / pagination:**
+
+- React dashboard fetches existing records from PostgreSQL via the REST API (`useMonitorData` + TanStack Query)
+
+```
+┌─────────────┐     cron / Run now      ┌────────────────┐
+│  Scheduler  │ ───────────────────────▶│ MonitorService │
+└─────────────┘                         └───────┬────────┘
+                                                │
+                    ┌───────────────────────────┼───────────────────────────┐
+                    ▼                           ▼                           ▼
+             ┌────────────┐             ┌──────────────┐             ┌─────────────┐
+             │  httpbin   │             │  PostgreSQL  │             │ Broadcaster │
+             └────────────┘             └──────┬───────┘             └──────┬──────┘
+                                               │ REST                       │ WS
+                                               ▼                            ▼
+                                        ┌─────────────────────────────────────────┐
+                                        │           React Dashboard               │
+                                        │     (useMonitorData + TanStack Query)   │
+                                        └─────────────────────────────────────────┘
+```
+
+---
+
+## Choice of technologies and reasoning
+
+| Technology | Why |
+|---|---|
+| **Node.js + Express** | I/O-bound workload (one HTTP ping, one DB write, one socket push). Minimal overhead, familiar stack. |
+| **PostgreSQL** | Reliable relational store for time-ordered rows + JSONB for the echoed payload. One table doesn’t need a heavy ORM. |
+| **`pg` (no ORM)** | Keeps SQL explicit and easy to reason about for a small schema. |
+| **`ws`** | Lightweight single-channel broadcast. Socket.IO extras aren’t needed here. |
+| **`node-cron`** | Declarative schedule, env-configurable, good enough for a single-process demo. |
+| **React + Vite + TypeScript** | Fast frontend loop and type safety across the API/UI boundary. |
+| **TanStack Query** | Owns REST fetch/cache; WebSocket pushes merge into the same cache. |
+| **Tailwind + Recharts** | Fast styling and a composed chart for the anomaly confidence band. |
+| **Jest + Supertest** | Backend unit/integration/e2e with a real Postgres test DB. |
+| **Vitest + Testing Library** | Frontend component tests with a Vite-native runner. |
+| **Docker Compose** | One-command local stack for reviewers. |
+
+---
+
+## Core component identification
+
+Focus was on the pieces that define correctness: **ping → persist → stream → display**, plus anomaly detection as the main analysis surface.
 
 | Component | Location | Why it is core |
 |---|---|---|
@@ -67,61 +137,39 @@ Focus was on the pieces that define correctness for this system: **ping → pers
 | **Anomaly detector / AnalysisService** | `backend/src/modules/monitor/anomaly/`, `analysis-service.js` | Rolling z-score + EWMA forecast for latency spikes. Pure analysis functions, easy to unit-test. |
 | **useMonitorData** | `frontend/src/hooks/useMonitorData.ts` | Fuses REST snapshot + live WS pushes into one cache. Keeps UI components presentational. |
 
-Backend layout is feature-based under `backend/src/modules/monitor/` (kebab-case), with shared cross-cutting code in `backend/src/shared/`.
-
 ---
 
-## Testing priorities (and why)
+## Testing strategy
 
-Testing effort was concentrated on the highest-risk paths first.
+Testing effort was concentrated on the highest-risk paths first (pragmatic coverage over chasing 100%).
 
-### Backend (highest priority)
+### How to run tests
 
 ```bash
+# Backend
 cd backend
 npm test
 npm run test:coverage
 npm run lint
-```
 
-| Priority | What | Why |
-|---|---|---|
-| **1. Unit — MonitorService** | success, 4xx/5xx, timeout, network error, broadcast contract | This is the business-critical path; regressions here break the product. |
-| **1. Unit — anomaly detector** | spikes, drops, warm-up suppression, band ordering | Statistical logic is easy to get subtly wrong and hard to catch in UI. |
-| **2. Integration — REST routes** | health, results, stats, analysis, manual run | Confirms HTTP contracts + DB wiring with a real Postgres test DB. |
-| **3. E2E — realtime flow** | trigger run → WS broadcast → REST queryable | Proves the end-to-end promise: persist + live stream. |
-
-Also covered with unit tests: scheduler overlap/boot behaviour, payload generator, analysis service wrappers.
-
-### Frontend (supporting)
-
-```bash
+# Frontend
 cd frontend
 npm test
 ```
 
-Component tests cover empty/loading states (`ResultsTable`, `LoadingResults`). Hook-level tests for `useMonitorData` are listed under future improvements — the fusion logic is important, but backend correctness was the tighter risk for this assignment.
+### Priorities and reasoning
+
+| Priority | What | Why |
+|---|---|---|
+| **1. Unit — MonitorService** | success, 4xx/5xx, timeout, network error, broadcast contract | Business-critical path; regressions here break the product. |
+| **1. Unit — anomaly detector** | spikes, drops, warm-up suppression, band ordering | Statistical logic is easy to get subtly wrong and hard to catch in UI. |
+| **2. Integration — REST routes** | health, results, stats, analysis, manual run | Confirms HTTP contracts + DB wiring with a real Postgres test DB. |
+| **3. E2E — realtime flow** | trigger run → WS broadcast → REST queryable | Proves the end-to-end promise: persist + live stream. |
+| **4. Frontend components** | empty/loading states (`ResultsTable`, `LoadingResults`) | Guards the main empty UX; hook-level `useMonitorData` tests are future work. |
+
+Also covered with unit tests: scheduler overlap/boot behaviour, payload generator, analysis service wrappers.
 
 **CI (GitHub Actions):** on every push/PR → backend lint + migrate + test with coverage, and frontend component tests with coverage.
-
----
-
-## Configuration
-
-### Backend runtime env
-
-- `DATABASE_URL` (required)
-- `CORS_ORIGIN` (use `*` for dev; set to frontend origin in production)
-- `MONITOR_TARGET_URL` (default: `https://httpbin.org/anything`)
-- `MONITOR_CRON` (default: `*/5 * * * *`)
-- `MONITOR_RUN_ON_BOOT=true` (optional: one run on startup)
-- `MONITOR_REQUEST_TIMEOUT_MS` (default: `10000`)
-- `PORT` (default: `4000`)
-
-### Frontend build-time env
-
-- `VITE_API_BASE` (default: `http://localhost:4000`)
-- `VITE_WS_URL` (default: `ws://localhost:4000/ws`)
 
 ---
 
@@ -149,7 +197,9 @@ Note: the schedule runs inside the backend process. If the service sleeps/scales
 
 ---
 
-## Assumptions / shortcuts (time constraints)
+## Assumptions made
+
+Shortcuts / trade-offs taken due to time constraints:
 
 - Failed pings are stored as data, not dropped
 - Stats (avg latency) are computed over successful requests only
