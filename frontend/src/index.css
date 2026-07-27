@@ -1,0 +1,112 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Surfaces */
+  --bg: #f6f8fa;
+  --surface: #ffffff;
+  --surface-2: #eef1f4;
+  --border: #e2e7ec;
+  --border-subtle: #e2e7ec;
+
+  /* Text */
+  --text: #171a1f;
+  --text-muted: #586170;
+  --text-faint: #8a929e;
+
+  /* Brand / interactive */
+  --primary: #0fb89b;
+  --primary-hover: #0ca98e;
+  --primary-muted: rgba(15, 184, 155, 0.12);
+  --on-primary: #ffffff;
+
+  /* Semantic — readable on white */
+  --success: #12a150;
+  --success-muted: rgba(18, 161, 80, 0.12);
+  --danger: #e5484d;
+  --danger-muted: rgba(229, 72, 77, 0.1);
+  --warning: #b25e00;
+  --warning-muted: rgba(178, 94, 0, 0.1);
+
+  /* Chart (light-readable) */
+  --chart-actual: #171a1f;
+  --chart-predicted: #6b7280;
+  --chart-band: #0fb89b;
+  --chart-anomaly: #e5484d;
+  --chart-grid: #eaedf0;
+  --chart-tick: #8a929e;
+
+  /* Elevation */
+  --shadow-panel: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.08);
+  --shadow-tooltip: 0 4px 16px rgba(16, 24, 40, 0.1);
+}
+
+@layer base {
+  html {
+    color-scheme: light;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background-color: var(--bg);
+    color: var(--text);
+    font-family: 'IBM Plex Sans', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  code,
+  pre,
+  .font-mono {
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+  }
+
+  :focus:not(:focus-visible) {
+    outline: none;
+  }
+}
+
+@layer components {
+  .panel {
+    @apply rounded-xl border border-line bg-surface shadow-panel;
+  }
+
+  .panel-nested {
+    @apply rounded-lg border border-line bg-surface-2;
+  }
+
+  .btn-primary {
+    @apply rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-on-primary transition
+      hover:bg-primary-hover active:brightness-95 disabled:cursor-default disabled:opacity-60;
+  }
+
+  .btn-ghost {
+    @apply rounded-lg border border-line bg-surface px-3 py-1.5 text-xs text-muted transition
+      hover:border-muted hover:text-text disabled:cursor-default disabled:opacity-40;
+  }
+
+  .label-caps {
+    @apply text-xs font-semibold uppercase tracking-wider text-muted;
+  }
+
+  .alert-danger {
+    @apply rounded-lg bg-danger-muted px-4 py-2.5 text-sm text-danger;
+    border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
+  }
+
+  .alert-warning {
+    @apply rounded-lg bg-warning-muted text-sm;
+    border: 1px solid color-mix(in srgb, var(--warning) 30%, transparent);
+  }
+
+  .state-empty {
+    @apply flex items-center justify-center rounded-xl border border-line bg-surface-2 p-10 text-center text-muted shadow-panel;
+  }
+}
