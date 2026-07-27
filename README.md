@@ -1,5 +1,7 @@
 # HTTP Monitor
 
+**Live demo:** [https://frontend-staging-0e36.up.railway.app/](https://frontend-staging-0e36.up.railway.app/)
+
 Pings `httpbin.org/anything` every 5 minutes, stores results in PostgreSQL, and streams live updates to a React dashboard.
 
 ## Quick start
