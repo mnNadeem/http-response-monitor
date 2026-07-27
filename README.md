@@ -1,8 +1,6 @@
 # HTTP Response Monitor
 
-**Repository:** [https://github.com/mnNadeem/http-response-monitor](https://github.com/mnNadeem/http-response-monitor) *(public)*  
-**Live demo:** [https://frontend-staging-0e36.up.railway.app/](https://frontend-staging-0e36.up.railway.app/)  
-**Author:** Muhammad Nadeem (`mnNadeem`)
+**Live demo:** [https://frontend-staging-0e36.up.railway.app/](https://frontend-staging-0e36.up.railway.app/)
 
 Pings `httpbin.org/anything` every 5 minutes, stores results in PostgreSQL, and streams live updates to a React dashboard.
 
