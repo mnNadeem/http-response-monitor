@@ -126,7 +126,6 @@ Shortcuts / trade-offs taken for time:
 
 ## Future improvements
 
-- Frontend tests (Vitest + Testing Library for `useMonitorData`)
 - Separate scheduler worker so API restarts don't interrupt the cron
 - Rate limiting and auth for public deployments
 - Proper migration tool (Knex / node-pg-migrate) instead of the minimal custom runner
